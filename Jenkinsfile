@@ -25,15 +25,31 @@ pipeline {
       }
     }
 
-    stage('Deploy') {
-      steps {
-        sh "docker stop $CONTAINER || true"
-        sh "docker rm $CONTAINER || true"
-        sh "docker run -d -p $PORTS --name $CONTAINER $IMAGE"
-      }
+stage('Deploy') {
+    steps {
+        script {
+            sh """
+            docker stop $CONTAINER || true
+            docker rm   $CONTAINER || true
+
+            # (re)create network only if it doesn't exist
+            docker network inspect vehiculos-net >/dev/null 2>&1 || \
+              docker network create vehiculos-net
+
+            # conecta (o arranca) MySQL en la red
+            docker network connect vehiculos-net vehiculos-mysql 2>/dev/null || true
+
+            # contenedor de la API en la misma red
+            docker run -d \
+              --network vehiculos-net \
+              -p 9090:8080 \
+              --name $CONTAINER \
+              $IMAGE
+            """
+        }
     }
-  }
+}
+
 
   triggers { githubPush() }
 }
-
