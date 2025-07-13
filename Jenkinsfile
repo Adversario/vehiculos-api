@@ -1,55 +1,56 @@
 pipeline {
-  agent any
-  tools { maven 'M3' }           // usa la Maven 3.9 definida en Jenkins
+    agent any
 
-  environment {
-    IMAGE = 'imagen_vehiculos'
-    CONTAINER = 'contenedor_sucursal'
-    PORTS = '9090:8080'
-  }
-
-  stages {
-    stage('Checkout') {
-      steps { checkout scm }
+    environment {
+        IMAGE     = 'vehiculos-api:latest'
+        CONTAINER = 'contenedor_sucursal'
+        NETWORK   = 'vehiculos-net'
+        PORTS     = '9090:8080'
     }
 
-    stage('Build') {
-      steps {
-        sh 'mvn -B clean package -DskipTests'
-      }
-    }
+    stages {
 
-    stage('Docker Build') {
-      steps {
-        sh "docker build -t $IMAGE ."
-      }
-    }
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
 
-stage('Deploy') {
-    steps {
-        script {
-            sh """
-            docker stop $CONTAINER || true
-            docker rm   $CONTAINER || true
+        stage('Build') {
+            steps {
+                sh 'mvn -B clean package -DskipTests'
+            }
+        }
 
-            # (re)create network only if it doesn't exist
-            docker network inspect vehiculos-net >/dev/null 2>&1 || \
-              docker network create vehiculos-net
+        stage('Docker Build') {
+            steps {
+                sh """
+                docker build -t $IMAGE .
+                """
+            }
+        }
 
-            # conecta (o arranca) MySQL en la red
-            docker network connect vehiculos-net vehiculos-mysql 2>/dev/null || true
+        stage('Deploy') {
+            steps {
+                script {
+                    sh """
+                    # -- detener / borrar contenedor previo (si existe)
+                    docker stop  $CONTAINER  || true
+                    docker rm    $CONTAINER  || true
 
-            # contenedor de la API en la misma red
-            docker run -d \
-              --network vehiculos-net \
-              -p 9090:8080 \
-              --name $CONTAINER \
-              $IMAGE
-            """
+                    # -- crea la red sólo si no existe
+                    docker network inspect $NETWORK >/dev/null 2>&1 || \
+                      docker network create $NETWORK
+
+                    # -- conecta MySQL a la red (ignora error si ya estaba)
+                    docker network connect $NETWORK vehiculos-mysql 2>/dev/null || true
+
+                    # -- contenedor de la API
+                    docker run -d --network $NETWORK -p $PORTS \
+                               --name $CONTAINER $IMAGE
+                    """
+                }
+            }
         }
     }
-}
-
-
-  triggers { githubPush() }
 }
